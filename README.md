@@ -2,7 +2,7 @@
 
 Check if any web service is up or down — in real time.
 
-**Live demo → [service-health-checker.vercel.app](https://service-health-checker.netlify.app)**
+**Live demo → [service-health-checker.netlify.app](https://service-health-checker.netlify.app)**
 
 ---
 
