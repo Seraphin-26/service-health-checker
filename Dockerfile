@@ -32,6 +32,9 @@ COPY . .
 # Cette option doit aussi être présente dans next.config.js (voir ci-dessous)
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Créer le dossier public s'il n'existe pas (requis par le COPY dans le runner)
+RUN mkdir -p public
+
 RUN npm run build
 
 
