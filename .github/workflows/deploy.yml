@@ -1,0 +1,97 @@
+name: CI — Test, Build & Deploy
+
+on:
+  push:
+    branches:
+      - main
+  # Permet aussi de déclencher manuellement depuis l'UI GitHub
+  workflow_dispatch:
+
+env:
+  # Nom de l'image sur Docker Hub  →  docker.io/<username>/<image>
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/service-health-checker
+
+jobs:
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 1 : Tests unitaires
+  # ───────────────────────────────────────────────────────────────────────────
+  test:
+    name: 🧪 Tests unitaires
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Installation des dépendances
+        run: npm ci
+
+      - name: Lancement des tests (Vitest)
+        run: npm test
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # Job 2 : Build & Push Docker (uniquement si les tests passent)
+  # ───────────────────────────────────────────────────────────────────────────
+  docker:
+    name: 🐳 Build & Push Docker
+    runs-on: ubuntu-latest
+    needs: test          # Dépend du job "test" — ne tourne que si test ✅
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      # Calcule le hash court du commit pour le tag de l'image
+      - name: Extraire le hash court du commit
+        id: vars
+        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+
+      # Active QEMU pour les builds multi-architecture (amd64 + arm64)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # Active Buildx pour les fonctionnalités avancées (cache, multi-arch)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Authentification sur Docker Hub via les secrets du dépôt
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Build et push avec deux tags : latest + hash du commit
+      - name: Build & Push l'image Docker
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          # Multi-architecture : Linux amd64 (serveurs) + arm64 (Apple M1/M2, Raspberry Pi)
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ env.IMAGE_NAME }}:latest
+            ${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.sha_short }}
+          # Cache des layers Docker entre les runs pour accélérer les builds
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Résumé affiché dans l'UI GitHub Actions
+      - name: Résumé du déploiement
+        run: |
+          echo "## 🚀 Image publiée avec succès !" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Tag | Valeur |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| \`latest\` | \`${{ env.IMAGE_NAME }}:latest\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Commit | \`${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.sha_short }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit :** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Branche :** \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
